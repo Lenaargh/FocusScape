@@ -3,19 +3,31 @@ import { SynthParams } from './audio';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export async function getAudioMixSuggestion(prompt: string) {
+export async function getAudioMixSuggestion(prompt: string, hasCustomSynth: boolean, options: { includeBackground: boolean, currentVolumes?: Record<string, number> }) {
+  const userSituation = prompt.trim() ? `User's situation: "${prompt}"` : "The user wants a surprise mix. Be creative and design a unique, effective soundscape.";
+  const customSynthInstruction = hasCustomSynth ? "\nThe user currently has an AI-generated custom synth active. You can choose to include it in the mix by setting 'custom_synth' volume between 0.0 and 1.0." : "";
+  
+  const backgroundInstruction = options.includeBackground 
+    ? "- brown, pink, white, rain" 
+    : "- brown, pink, white, rain (SET THESE TO 0.0 as the user requested no background noises)";
+    
+  const currentMixInstruction = options.currentVolumes 
+    ? `\nThe user's CURRENT mix volumes are: ${JSON.stringify(options.currentVolumes)}. Please use this as a starting point and adjust it to fit the new request.` 
+    : "";
+
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `The user is using a focus soundscape app. They need a new mix of sounds to help them concentrate.
-User's situation: "${prompt}"
+${userSituation}${customSynthInstruction}${currentMixInstruction}
 
 Suggest a mix of these sounds (values from 0.0 to 1.0):
-- brown, pink, white, rain
+${backgroundInstruction}
 - binaural_delta (1-4Hz, deep sleep/healing)
 - binaural_theta (4-8Hz, meditation/creativity)
 - binaural_alpha (8-14Hz, relaxed focus/learning)
 - binaural_beta (14-30Hz, active attention/problem solving)
 - binaural_gamma (30-50Hz, high-level processing)
+${hasCustomSynth ? "- custom_synth (The user's currently active AI synth)" : ""}
 
 Return a comforting, encouraging message (1-2 sentences) and the suggested volume levels.`,
     config: {
@@ -36,6 +48,7 @@ Return a comforting, encouraging message (1-2 sentences) and the suggested volum
               binaural_alpha: { type: Type.NUMBER },
               binaural_beta: { type: Type.NUMBER },
               binaural_gamma: { type: Type.NUMBER },
+              custom_synth: { type: Type.NUMBER },
             },
             required: ['brown', 'pink', 'white', 'rain', 'binaural_delta', 'binaural_theta', 'binaural_alpha', 'binaural_beta', 'binaural_gamma'],
           },
@@ -53,11 +66,14 @@ export async function generateCustomSynth(prompt: string, previousParams?: Synth
   const previousContext = previousParams 
     ? `\nPrevious parameters were: ${JSON.stringify(previousParams)}. Please adjust them based on the new request.` 
     : '';
+  
+  const userRequest = prompt.trim() ? `User's request: "${prompt}"` : "The user wants a surprise synth patch. Be highly creative, maybe something ethereal, deep, or rhythmic.";
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `Design a continuous, generative ambient synth patch for a user who needs focus/relaxation.
-User's request: "${prompt}"${previousContext}
+Users can specify mood (e.g., 'calm', 'energetic') or timbre (e.g., 'metallic', 'woody').
+${userRequest}${previousContext}
 
 Return a short, evocative name for this synth (e.g., "Deep Ocean Drone", "Crystal Focus"), an encouraging message, and the synthesizer parameters:
 - baseFreq: 50 to 800 (Hz)
@@ -93,4 +109,24 @@ Return a short, evocative name for this synth (e.g., "Deep Ocean Drone", "Crysta
 
   if (!response.text) throw new Error('No response from Gemini');
   return JSON.parse(response.text);
+}
+
+export async function generateMixDescription(mixName: string, volumes: Record<string, number>, synthParams: SynthParams | null): Promise<string> {
+  const activeSounds = Object.entries(volumes)
+    .filter(([_, vol]) => vol > 0)
+    .map(([name, vol]) => `${name}: ${Math.round(vol * 100)}%`)
+    .join(', ');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Write a short, poetic, and descriptive 2-sentence summary of this audio mix.
+Mix Name: "${mixName}"
+Active Sounds: ${activeSounds}
+${synthParams ? `Includes a custom synth (Wave: ${synthParams.waveType}, Freq: ${synthParams.baseFreq}Hz).` : ''}
+
+Focus on the mood and what it might be good for (e.g., deep focus, relaxing, blocking out noise).`,
+  });
+
+  if (!response.text) throw new Error('No response from Gemini');
+  return response.text.trim();
 }
