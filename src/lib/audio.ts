@@ -1,34 +1,49 @@
-export type SoundType = 'brown' | 'pink' | 'white' | 'binaural' | 'rain';
+export const SOUND_TYPES = [
+  'brown', 'pink', 'white', 'rain',
+  'binaural_delta', 'binaural_theta', 'binaural_alpha', 'binaural_beta', 'binaural_gamma',
+  'custom_synth'
+] as const;
+
+export type SoundType = typeof SOUND_TYPES[number];
+
+export interface SynthParams {
+  baseFreq: number;
+  detune: number;
+  filterFreq: number;
+  filterType: BiquadFilterType;
+  waveType: OscillatorType;
+  lfoFreq: number;
+}
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  public analyzer: AnalyserNode | null = null;
   private isPlaying = false;
 
-  private sources: Record<SoundType, { nodes: (AudioBufferSourceNode | OscillatorNode)[], gain: GainNode | null }> = {
-    brown: { nodes: [], gain: null },
-    pink: { nodes: [], gain: null },
-    white: { nodes: [], gain: null },
-    binaural: { nodes: [], gain: null },
-    rain: { nodes: [], gain: null },
-  };
+  private sources: Record<SoundType, { nodes: AudioNode[], gain: GainNode | null }> = {} as any;
+  private volumes: Record<SoundType, number> = {} as any;
+  private customSynthParams: SynthParams | null = null;
 
-  private volumes: Record<SoundType, number> = {
-    brown: 0,
-    pink: 0,
-    white: 0,
-    binaural: 0,
-    rain: 0,
-  };
+  constructor() {
+    SOUND_TYPES.forEach(type => {
+      this.sources[type] = { nodes: [], gain: null };
+      this.volumes[type] = 0;
+    });
+  }
 
   private initContext() {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.connect(this.ctx.destination);
+      this.analyzer = this.ctx.createAnalyser();
+      this.analyzer.fftSize = 512; // Increased for better visualizer resolution
+      
+      this.masterGain.connect(this.analyzer);
+      this.analyzer.connect(this.ctx.destination);
       this.masterGain.gain.value = 1;
 
-      (Object.keys(this.sources) as SoundType[]).forEach((type) => {
+      SOUND_TYPES.forEach((type) => {
         const gainNode = this.ctx!.createGain();
         gainNode.gain.value = this.volumes[type];
         gainNode.connect(this.masterGain!);
@@ -88,32 +103,98 @@ class AudioEngine {
       const source = this.ctx.createBufferSource();
       source.buffer = this.createNoiseBuffer('pink');
       source.loop = true;
-      
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.value = 800; // Muffled rain sound
-      
+      filter.frequency.value = 800;
       source.connect(filter);
       filter.connect(this.sources[type].gain!);
       source.start();
-      this.sources[type].nodes.push(source);
-    } else if (type === 'binaural') {
+      this.sources[type].nodes.push(source, filter);
+    } else if (type.startsWith('binaural_')) {
       const leftOsc = this.ctx.createOscillator();
       const rightOsc = this.ctx.createOscillator();
       
-      leftOsc.frequency.value = 200;
-      rightOsc.frequency.value = 240; // 40Hz difference
+      let baseFreq = 200;
+      let diff = 10;
+      
+      switch(type) {
+        case 'binaural_delta': baseFreq = 100; diff = 2; break;
+        case 'binaural_theta': baseFreq = 150; diff = 6; break;
+        case 'binaural_alpha': baseFreq = 200; diff = 10; break;
+        case 'binaural_beta': baseFreq = 250; diff = 20; break;
+        case 'binaural_gamma': baseFreq = 300; diff = 40; break;
+      }
+      
+      leftOsc.frequency.value = baseFreq;
+      rightOsc.frequency.value = baseFreq + diff;
       
       const merger = this.ctx.createChannelMerger(2);
       leftOsc.connect(merger, 0, 0);
       rightOsc.connect(merger, 0, 1);
-      
       merger.connect(this.sources[type].gain!);
       
       leftOsc.start();
       rightOsc.start();
+      this.sources[type].nodes.push(leftOsc, rightOsc, merger);
+    } else if (type === 'custom_synth' && this.customSynthParams) {
+      const p = this.customSynthParams;
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      osc1.type = p.waveType;
+      osc2.type = p.waveType;
+      osc1.frequency.value = p.baseFreq;
+      osc2.frequency.value = p.baseFreq + p.detune;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = p.filterType;
+      filter.frequency.value = p.filterFreq;
+
+      const lfo = this.ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = p.lfoFreq;
       
-      this.sources[type].nodes.push(leftOsc, rightOsc);
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.value = p.filterFreq * 0.5;
+      
+      lfo.connect(lfoGain);
+      lfoGain.connect(filter.frequency);
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(this.sources[type].gain!);
+
+      osc1.start();
+      osc2.start();
+      lfo.start();
+
+      this.sources[type].nodes.push(osc1, osc2, lfo, lfoGain, filter);
+    }
+  }
+
+  public setCustomSynthParams(params: SynthParams | null) {
+    this.customSynthParams = params;
+    if (this.isPlaying && params) {
+      this.sources['custom_synth'].nodes.forEach(node => {
+        try { (node as AudioScheduledSourceNode).stop(); } catch (e) {}
+      });
+      this.sources['custom_synth'].nodes = [];
+      this.startSource('custom_synth');
+    }
+  }
+
+  public getCustomSynthParams() {
+    return this.customSynthParams;
+  }
+  
+  public getAnalyzerData(dataArray: Uint8Array) {
+    if (this.analyzer) {
+      this.analyzer.getByteFrequencyData(dataArray);
+    }
+  }
+
+  public setMasterVolume(volume: number) {
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.1);
     }
   }
 
@@ -124,7 +205,7 @@ class AudioEngine {
     }
     
     if (!this.isPlaying) {
-      (Object.keys(this.sources) as SoundType[]).forEach((type) => {
+      SOUND_TYPES.forEach((type) => {
         this.startSource(type);
       });
       this.isPlaying = true;
@@ -133,9 +214,9 @@ class AudioEngine {
 
   public stop() {
     if (this.isPlaying) {
-      (Object.keys(this.sources) as SoundType[]).forEach((type) => {
+      SOUND_TYPES.forEach((type) => {
         this.sources[type].nodes.forEach(node => {
-          try { node.stop(); } catch (e) {}
+          try { (node as AudioScheduledSourceNode).stop(); } catch (e) {}
         });
         this.sources[type].nodes = [];
       });
@@ -152,6 +233,35 @@ class AudioEngine {
 
   public getVolumes() {
     return { ...this.volumes };
+  }
+
+  public async recordLoop(durationMs: number = 10000): Promise<Blob> {
+    if (!this.ctx || !this.masterGain) throw new Error('Audio engine not initialized');
+    
+    const dest = this.ctx.createMediaStreamDestination();
+    this.masterGain.connect(dest);
+    
+    // Fallback to webm or default
+    const options = MediaRecorder.isTypeSupported('audio/webm') 
+      ? { mimeType: 'audio/webm' } 
+      : undefined;
+      
+    const recorder = new MediaRecorder(dest.stream, options);
+    const chunks: BlobPart[] = [];
+    
+    recorder.ondataavailable = e => chunks.push(e.data);
+    
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        this.masterGain!.disconnect(dest);
+        resolve(new Blob(chunks, { type: options?.mimeType || 'audio/mp4' }));
+      };
+      
+      recorder.start();
+      setTimeout(() => {
+        recorder.stop();
+      }, durationMs);
+    });
   }
 }
 
