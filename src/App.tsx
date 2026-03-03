@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { engine, SoundType, SynthParams, SOUND_TYPES } from './lib/audio';
-import { getAudioMixSuggestion, generateCustomSynth, generateMixDescription } from './lib/gemini';
+import { getAudioMixSuggestion, generateCustomSynth, generateMixDescription, hasBuiltInKey } from './lib/gemini';
 import Visualizer, { VisualizerStyle } from './components/Visualizer';
-import { Play, Pause, Sparkles, Brain, Droplets, Waves, Wind, Loader2, Volume2, VolumeX, ChevronDown, Menu, X, Save, Trash2, Music, Download, RefreshCw, Edit3, XCircle, PlusCircle, Star, Info, RotateCcw, Undo2, Redo2, EyeOff, Eye } from 'lucide-react';
+import { Play, Pause, Sparkles, Brain, Droplets, Waves, Wind, Loader2, Volume2, VolumeX, ChevronDown, Menu, X, Save, Trash2, Music, Download, RefreshCw, Edit3, XCircle, PlusCircle, Star, Info, RotateCcw, Undo2, Redo2, EyeOff, Eye, Key, Settings, ExternalLink } from 'lucide-react';
 
 const STANDARD_SOUNDS = [
   { id: 'brown', label: 'Brown Noise', icon: Waves, description: 'Deep rumble' },
@@ -76,6 +76,30 @@ export default function App() {
     SOUND_TYPES.forEach(t => init[t] = false);
     return init;
   });
+
+  const [apiKey, setApiKey] = useState<string>(() => {
+    if (hasBuiltInKey()) return '';
+    return localStorage.getItem('focusscape_api_key') || '';
+  });
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKeySettings, setShowApiKeySettings] = useState(false);
+  const needsApiKey = !hasBuiltInKey() && !apiKey;
+
+  const saveApiKey = (key: string) => {
+    const trimmed = key.trim();
+    if (!trimmed) return;
+    setApiKey(trimmed);
+    localStorage.setItem('focusscape_api_key', trimmed);
+    setApiKeyInput('');
+  };
+
+  const clearApiKey = () => {
+    setApiKey('');
+    localStorage.removeItem('focusscape_api_key');
+    setShowApiKeySettings(false);
+  };
+
+  const geminiKey = hasBuiltInKey() ? undefined : apiKey || undefined;
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -202,13 +226,13 @@ export default function App() {
           includeBackground,
           currentVolumes: (buildOnCurrent || isRemix) ? volumes : undefined
         };
-        const result = await getAudioMixSuggestion(promptToUse, hasSynth, options);
+        const result = await getAudioMixSuggestion(promptToUse, hasSynth, options, geminiKey);
         setAiMessage(result.message);
         applyMix(result.settings);
         setSaveName("AI Mix: " + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
       } else {
         const prevParams = isRemix ? engine.getCustomSynthParams() || undefined : undefined;
-        const result = await generateCustomSynth(promptToUse, prevParams);
+        const result = await generateCustomSynth(promptToUse, prevParams, geminiKey);
         setAiMessage(result.message);
         setAiSynthName(result.name);
         applyMix({ custom_synth: 0.8 }, result.params);
@@ -258,7 +282,7 @@ export default function App() {
     e.stopPropagation();
     setGeneratingDescId(mix.id);
     try {
-      const desc = await generateMixDescription(mix.name, mix.volumes, mix.synthParams);
+      const desc = await generateMixDescription(mix.name, mix.volumes, mix.synthParams, geminiKey);
       updateMix(mix.id, { description: desc });
     } catch (err) {
       console.error(err);
@@ -323,8 +347,79 @@ export default function App() {
     return a.name.localeCompare(b.name);
   });
 
+  if (needsApiKey) {
+    return (
+      <div className="min-h-screen bg-[#1a1b1e] text-slate-200 font-sans selection:bg-indigo-500/30 flex items-center justify-center px-4">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-semibold tracking-tight text-white mb-2">FocusScape</h1>
+            <p className="text-slate-400">Custom soundscapes for neurodivergent minds.</p>
+          </div>
+          <div className="bg-[#25262b] rounded-2xl p-6 border border-white/5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-indigo-500/20 p-2 rounded-lg text-indigo-400">
+                <Key size={20} />
+              </div>
+              <div>
+                <h2 className="font-semibold text-white">Enter your Gemini API key</h2>
+                <p className="text-xs text-slate-400">Your key stays in your browser and is never sent to any server.</p>
+              </div>
+            </div>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="AIza..."
+              className="w-full bg-[#1a1b1e] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 mb-3 font-mono text-sm"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && saveApiKey(apiKeyInput)}
+            />
+            <button
+              onClick={() => saveApiKey(apiKeyInput)}
+              disabled={!apiKeyInput.trim()}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-colors mb-4"
+            >
+              Start
+            </button>
+            <p className="text-xs text-slate-500 text-center">
+              Get a free key from{' '}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1">
+                Google AI Studio <ExternalLink size={10} />
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#1a1b1e] text-slate-200 font-sans selection:bg-indigo-500/30">
+      {/* API Key Settings Modal */}
+      {showApiKeySettings && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4" onClick={() => setShowApiKeySettings(false)}>
+          <div className="bg-[#25262b] rounded-2xl p-6 border border-white/10 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold text-white mb-4">API Key Settings</h2>
+            {hasBuiltInKey() ? (
+              <p className="text-sm text-slate-400 mb-4">This deployment uses a built-in API key. No configuration needed.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 mb-3">Your key is stored locally in your browser.</p>
+                <div className="flex items-center gap-2 bg-[#1a1b1e] rounded-xl px-4 py-3 mb-4 font-mono text-sm text-slate-400">
+                  <span className="truncate">{apiKey.slice(0, 8)}...{apiKey.slice(-4)}</span>
+                </div>
+                <button onClick={clearApiKey} className="w-full py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors text-sm">
+                  Remove key and sign out
+                </button>
+              </>
+            )}
+            <button onClick={() => setShowApiKeySettings(false)} className="w-full py-2 mt-2 text-slate-400 hover:text-white transition-colors text-sm">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
@@ -595,6 +690,11 @@ export default function App() {
             <p className="text-slate-400 text-sm sm:text-base">Custom soundscapes for neurodivergent minds.</p>
           </div>
           <div className="flex items-center gap-1">
+            {!hasBuiltInKey() && (
+              <button onClick={() => setShowApiKeySettings(true)} className="p-2 text-slate-400 hover:text-white transition-colors" title="API Key Settings">
+                <Settings size={22} />
+              </button>
+            )}
             <button onClick={() => setShowInfo(true)} className="p-2 text-slate-400 hover:text-white transition-colors" title="Sound Info">
               <Info size={22} />
             </button>

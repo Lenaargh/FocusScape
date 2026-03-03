@@ -2,37 +2,32 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# FocusScape
 
-This contains everything you need to run your app locally.
+AI-powered soundscapes for neurodivergent minds. Mix background noise, binaural beats, and AI-generated synths to build your perfect focus environment.
 
-View your app in AI Studio: https://ai.studio/apps/cdfe12e8-77c2-4d49-a790-3dfe14091c11
+## Getting Started
+
+Users need a free **Gemini API key** to use the AI features. You can get one at [Google AI Studio](https://aistudio.google.com/apikey). When you open FocusScape, you'll be prompted to paste your key — it's stored locally in your browser and never sent anywhere except directly to the Gemini API.
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Run the app:
    `npm run dev`
+3. Open [http://localhost:3000](http://localhost:3000) and paste your Gemini API key when prompted.
+
+> **Private mode:** If you set `GEMINI_API_KEY` in a `.env.local` file, the app will use that key automatically and skip the setup prompt. This is useful for personal deployments.
 
 ## Deploy
 
-> **Important — API key exposure:** Vite embeds `GEMINI_API_KEY` into the client-side JavaScript bundle at build time. This means **anyone who visits your deployed app can extract the key** from the browser's JS source. On AI Studio this is handled for you, but for all other platforms you should:
-> 1. [Restrict the key](https://ai.google.dev/gemini-api/docs/api-key) to specific HTTP referrers in Google AI Studio
-> 2. Use a short-lived or project-scoped key
-> 3. Set a usage quota / budget cap on the key
+The app supports two modes:
 
-### AI Studio (Recommended)
-
-This app is built for [Google AI Studio](https://ai.google.dev/aistudio). Open the link below to view and redeploy it directly from AI Studio:
-
-https://ai.studio/apps/cdfe12e8-77c2-4d49-a790-3dfe14091c11
-
-AI Studio automatically injects the `GEMINI_API_KEY` and `APP_URL` secrets at runtime — no manual configuration needed.
+- **BYOK (default):** Deploy without setting `GEMINI_API_KEY`. Users enter their own key in the browser. No server-side secrets needed — just host the static files.
+- **Private / built-in key:** Set `GEMINI_API_KEY` at build time. The key is embedded in the JS bundle and used automatically. Only use this for personal/private deployments.
 
 ### Vercel
 
@@ -40,8 +35,7 @@ Deployment settings are pre-configured in [`vercel.json`](vercel.json).
 
 1. Push your code to a GitHub repository.
 2. Import the repository at [vercel.com/new](https://vercel.com/new).
-3. Add the `GEMINI_API_KEY` environment variable in **Project Settings → Environment Variables**.
-4. Click **Deploy**.
+3. Click **Deploy** — no environment variables needed (users provide their own key).
 
 ### Netlify
 
@@ -49,8 +43,7 @@ Deployment settings are pre-configured in [`netlify.toml`](netlify.toml).
 
 1. Push your code to a GitHub repository.
 2. Import the repository at [app.netlify.com](https://app.netlify.com) and choose **Add new site → Import an existing project**.
-3. Add the `GEMINI_API_KEY` environment variable under **Site configuration → Environment variables**.
-4. Click **Deploy site**.
+3. Click **Deploy site** — no environment variables needed.
 
 ### Self-hosting / Static Hosting
 
@@ -60,4 +53,3 @@ Deployment settings are pre-configured in [`netlify.toml`](netlify.toml).
    ```
 2. The static files are generated in the `dist/` directory.
 3. Serve the `dist/` folder with any static file server (nginx, Apache, Caddy, `serve`, etc.).
-4. Make sure the `GEMINI_API_KEY` environment variable is available at **build time** (it is embedded into the bundle by Vite).

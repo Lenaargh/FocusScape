@@ -1,18 +1,35 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { SynthParams } from './audio';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const BUILD_TIME_KEY = process.env.GEMINI_API_KEY || '';
 
-export async function getAudioMixSuggestion(prompt: string, hasCustomSynth: boolean, options: { includeBackground: boolean, currentVolumes?: Record<string, number> }) {
+let cachedClient: GoogleGenAI | null = null;
+let cachedKey: string = '';
+
+function getClient(apiKey?: string): GoogleGenAI {
+  const key = apiKey || BUILD_TIME_KEY;
+  if (!key) throw new Error('No API key configured');
+  if (cachedClient && cachedKey === key) return cachedClient;
+  cachedClient = new GoogleGenAI({ apiKey: key });
+  cachedKey = key;
+  return cachedClient;
+}
+
+export function hasBuiltInKey(): boolean {
+  return BUILD_TIME_KEY.length > 0;
+}
+
+export async function getAudioMixSuggestion(prompt: string, hasCustomSynth: boolean, options: { includeBackground: boolean, currentVolumes?: Record<string, number> }, apiKey?: string) {
+  const ai = getClient(apiKey);
   const userSituation = prompt.trim() ? `User's situation: "${prompt}"` : "The user wants a surprise mix. Be creative and design a unique, effective soundscape.";
   const customSynthInstruction = hasCustomSynth ? "\nThe user currently has an AI-generated custom synth active. You can choose to include it in the mix by setting 'custom_synth' volume between 0.0 and 1.0." : "";
-  
-  const backgroundInstruction = options.includeBackground 
-    ? "- brown, pink, white, rain" 
+
+  const backgroundInstruction = options.includeBackground
+    ? "- brown, pink, white, rain"
     : "- brown, pink, white, rain (SET THESE TO 0.0 as the user requested no background noises)";
-    
-  const currentMixInstruction = options.currentVolumes 
-    ? `\nThe user's CURRENT mix volumes are: ${JSON.stringify(options.currentVolumes)}. Please use this as a starting point and adjust it to fit the new request.` 
+
+  const currentMixInstruction = options.currentVolumes
+    ? `\nThe user's CURRENT mix volumes are: ${JSON.stringify(options.currentVolumes)}. Please use this as a starting point and adjust it to fit the new request.`
     : "";
 
   const response = await ai.models.generateContent({
@@ -62,11 +79,12 @@ Return a comforting, encouraging message (1-2 sentences) and the suggested volum
   return JSON.parse(response.text);
 }
 
-export async function generateCustomSynth(prompt: string, previousParams?: SynthParams): Promise<{ name: string, message: string, params: SynthParams }> {
-  const previousContext = previousParams 
-    ? `\nPrevious parameters were: ${JSON.stringify(previousParams)}. Please adjust them based on the new request.` 
+export async function generateCustomSynth(prompt: string, previousParams?: SynthParams, apiKey?: string): Promise<{ name: string, message: string, params: SynthParams }> {
+  const ai = getClient(apiKey);
+  const previousContext = previousParams
+    ? `\nPrevious parameters were: ${JSON.stringify(previousParams)}. Please adjust them based on the new request.`
     : '';
-  
+
   const userRequest = prompt.trim() ? `User's request: "${prompt}"` : "The user wants a surprise synth patch. Be highly creative, maybe something ethereal, deep, or rhythmic.";
 
   const response = await ai.models.generateContent({
@@ -111,7 +129,8 @@ Return a short, evocative name for this synth (e.g., "Deep Ocean Drone", "Crysta
   return JSON.parse(response.text);
 }
 
-export async function generateMixDescription(mixName: string, volumes: Record<string, number>, synthParams: SynthParams | null): Promise<string> {
+export async function generateMixDescription(mixName: string, volumes: Record<string, number>, synthParams: SynthParams | null, apiKey?: string): Promise<string> {
+  const ai = getClient(apiKey);
   const activeSounds = Object.entries(volumes)
     .filter(([_, vol]) => vol > 0)
     .map(([name, vol]) => `${name}: ${Math.round(vol * 100)}%`)
