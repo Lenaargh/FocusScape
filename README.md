@@ -21,6 +21,11 @@ View your app in AI Studio: https://ai.studio/apps/cdfe12e8-77c2-4d49-a790-3dfe1
 
 ## Deploy
 
+> **Important — API key exposure:** Vite embeds `GEMINI_API_KEY` into the client-side JavaScript bundle at build time. This means **anyone who visits your deployed app can extract the key** from the browser's JS source. On AI Studio this is handled for you, but for all other platforms you should:
+> 1. [Restrict the key](https://ai.google.dev/gemini-api/docs/api-key) to specific HTTP referrers in Google AI Studio
+> 2. Use a short-lived or project-scoped key
+> 3. Set a usage quota / budget cap on the key
+
 ### AI Studio (Recommended)
 
 This app is built for [Google AI Studio](https://ai.google.dev/aistudio). Open the link below to view and redeploy it directly from AI Studio:
@@ -31,19 +36,21 @@ AI Studio automatically injects the `GEMINI_API_KEY` and `APP_URL` secrets at ru
 
 ### Vercel
 
+Deployment settings are pre-configured in [`vercel.json`](vercel.json).
+
 1. Push your code to a GitHub repository.
 2. Import the repository at [vercel.com/new](https://vercel.com/new).
-3. Set the **Build Command** to `npm run build` and the **Output Directory** to `dist`.
-4. Add the `GEMINI_API_KEY` environment variable in **Project Settings → Environment Variables**.
-5. Click **Deploy**.
+3. Add the `GEMINI_API_KEY` environment variable in **Project Settings → Environment Variables**.
+4. Click **Deploy**.
 
 ### Netlify
 
+Deployment settings are pre-configured in [`netlify.toml`](netlify.toml).
+
 1. Push your code to a GitHub repository.
 2. Import the repository at [app.netlify.com](https://app.netlify.com) and choose **Add new site → Import an existing project**.
-3. Set the **Build Command** to `npm run build` and the **Publish Directory** to `dist`.
-4. Add the `GEMINI_API_KEY` environment variable under **Site configuration → Environment variables**.
-5. Click **Deploy site**.
+3. Add the `GEMINI_API_KEY` environment variable under **Site configuration → Environment variables**.
+4. Click **Deploy site**.
 
 ### Self-hosting / Static Hosting
 
@@ -54,5 +61,3 @@ AI Studio automatically injects the `GEMINI_API_KEY` and `APP_URL` secrets at ru
 2. The static files are generated in the `dist/` directory.
 3. Serve the `dist/` folder with any static file server (nginx, Apache, Caddy, `serve`, etc.).
 4. Make sure the `GEMINI_API_KEY` environment variable is available at **build time** (it is embedded into the bundle by Vite).
-
-> **Security note:** Because Vite injects `GEMINI_API_KEY` directly into the client-side JavaScript bundle, anyone who downloads your app can extract the key. Use [API key restrictions](https://ai.google.dev/gemini-api/docs/api-key) in Google AI Studio to limit the key to specific HTTP referrers, and consider a short-lived or project-scoped key when self-hosting publicly.
